@@ -1,18 +1,15 @@
 package ru.ngtu.vst.sim;
 
 public class Detail {
-	private int startTime = 0;
-	private int generalTime = 0;
+	private int treatmentCount = 1;
 
-	public Detail(int startTime) {
-		this.startTime = startTime;
+	public void incrementTreatmentCount()
+	{
+		this.treatmentCount++;
 	}
-
-	public void endTreatment(int time) {
-		this.generalTime = time - this.startTime;
-	}
-
-	public int getGeneralTime() {
-		return this.generalTime;
+	
+	public int getTreatmentCount()
+	{
+		return this.treatmentCount;
 	}
 }

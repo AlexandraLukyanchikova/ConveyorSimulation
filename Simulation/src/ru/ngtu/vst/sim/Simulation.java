@@ -1,68 +1,80 @@
 package ru.ngtu.vst.sim;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Queue;
 import java.util.Random;
 
-import org.jfree.ui.RefineryUtilities;
-
 public class Simulation {
+
+	private static int A = 50;
+	private static int B = 10;
+
+	private static int[] K = { 5, 10 };
+
+	private static int[] T = { 40, 60 };
+	private static int[] dt = { 10, 15 };
+	private static int T3 = 25;
+
+	private static double S1 = 4;
+	private static double S2 = 1.5;
+	private static double S3 = 200;
+	private static double S4 = 45;
+	private static double S5 = 4;
+
 	public static int time = 0;
+	public static final int simulationTime = 7 * 8 * 60;
+	public static final int firstMachinesCount = 15, secondMachinesCount = 2;
 	public static final List<Queue<Detail>> queueList = new ArrayList<Queue<Detail>>();
 	public static final List<Integer> maxQueueSizes = new ArrayList<Integer>();
+	public static final Queue<Detail> buffer = new LinkedList<Detail>();
+	public static int maxBufferSize = 0;
 	public static final Random random = new Random();
-	public static final int simulationTime = 8 * 60 * 60;
-	public static final List<Machine> machineList = new ArrayList<Machine>();
-	public static final RobotList robotList = new RobotList();
+	public static final List<Machine> firstMachines = new ArrayList<Machine>();
+	public static final List<Machine> secondMachines = new ArrayList<Machine>();
 	public static final EventList eventList = new EventList();
 	public static final List<Detail> readyDetails = new ArrayList<Detail>();
-	public static final int t0 = 70, t1 = 10, t2 = 15, t3 = 20, t4 = 15, t5 = 3, t6 = 140, t7 = 20, t8 = 180;
+	public static int detailCount = 0;
 
 	public static void main(String[] args) {
-		for (int i = 0; i < 5; i++) {
+		for (int i = 0; i < firstMachinesCount; i++) {
 			queueList.add(new LinkedList<Detail>());
 			maxQueueSizes.add(0);
 		}
-		for (int i = 0; i < 2; i++) {
-			machineList.add(new Machine());
+		for (int i = 0; i < firstMachinesCount; i++) {
+			firstMachines.add(new Machine());
 		}
-
-		eventList.plan(new Event(0, exponential(t0)));
-		eventList.plan(new Event(6, simulationTime));
+		for (int i = 0; i < secondMachinesCount; i++) {
+			secondMachines.add(new Machine());
+		}
+		eventList.plan(new Event(0, uniform(A, B)));
+		eventList.plan(new Event(4, simulationTime));
 
 		boolean finish = false;
 		while (true) {
 			Event currentEvent = eventList.getEvent();
 			time = currentEvent.getTime();
 			// 0 - getting of a detail
-			// 1 - delivery of a detail to the 1st machine
-			// 2 - completion of the treatment in the 1st machine
-			// 3 - delivery of a detail to the 2nd machine
-			// 4 - completion of the treatment in the 2nd machine
-			// 5 - delivery of a detail to the stock
-			// 6 - finish of simulation
+			// 1 - completion of the treatment in the 1st stage
+			// 2 - buffer overflow
+			// 3 - completion of the treatment in the 2st stage
+			// 4 - completion of the simulation
 			switch (currentEvent.getCode()) {
 			case 0:
 				handleDetailGetting();
 				break;
 			case 1:
-				handleDeliveryToPosition(1);
+				handleTreatmentOnStage(1, currentEvent.getMachineNumber());
 				break;
 			case 2:
-				handleTreatmentOnMachine(1);
+				handleBufferOverflow();
 				break;
 			case 3:
-				handleDeliveryToPosition(2);
+				handleTreatmentOnStage(2, currentEvent.getMachineNumber());
 				break;
 			case 4:
-				handleTreatmentOnMachine(2);
-				break;
-			case 5:
-				handleDeliveryToPosition(3);
-				break;
-			case 6:
 				finish = true;
 				break;
 			}
@@ -72,149 +84,114 @@ public class Simulation {
 			}
 		}
 
-		double averageTime = 0;
-		for (Detail detail : readyDetails) {
-			averageTime += detail.getGeneralTime();
-		}
-		averageTime /= readyDetails.size();
-
-		System.out.println("Details count: " + readyDetails.size());
-		System.out.println("Average time for detail (min): " + averageTime / 60);
+		System.out.println("Count of ready details: " + readyDetails.size());
+		System.out.println("Count of not ready details: " + (detailCount - readyDetails.size()));
 		System.out.println();
-		for (Robot robot : robotList.getRobotList()) {
-			System.out.println("Work coef of robot #" + robotList.getRobotList().indexOf(robot) + ": "
-					+ (double) robot.getWorkTime() / (double) simulationTime);
-		}
-		for (Machine machine : machineList) {
-			System.out.println("Work coef of machine #" + machineList.indexOf(machine) + ": "
-					+ (double) machine.getWorkTime() / (double) simulationTime);
-		}
+		System.out.println("Machines of 1st type: " + firstMachines.size());
+		System.out.println("Machines of 2nd type: " + secondMachines.size());
 		System.out.println();
 		for (int i = 0; i < maxQueueSizes.size(); i++) {
-			int size = maxQueueSizes.get(i);
-			System.out.println("Max size of queue #" + i + ": " + size);
+			System.out.println("Max size of queue #" + i + ": " + maxQueueSizes.get(i));
 		}
-
-		showHistogram(readyDetails);
+		System.out.println("Max buffer size: " + maxBufferSize);
 	}
 
 	public static void handleDetailGetting() {
-		eventList.plan(new Event(0, exponential(time + t0)));
-		Detail detail = new Detail(time);
-		queueList.get(0).add(detail);
-		if (maxQueueSizes.get(0) < queueList.get(0).size()) {
-			maxQueueSizes.set(0, queueList.get(0).size());
+		eventList.plan(new Event(0, uniform(time + A, B)));
+		for (int i = 0; i < 3; i++) {
+			List<Queue<Detail>> sortedList = new ArrayList<Queue<Detail>>(queueList);
+			sortedList.sort(new Comparator<Queue<Detail>>() {
+				public int compare(Queue<Detail> q1, Queue<Detail> q2) {
+					return Integer.compare(q1.size(), q2.size());
+				}
+			});
+			sortedList.get(0).add(new Detail());
+			detailCount++;
 		}
 
-		Robot robot = robotList.getNearestRobot(0);
-		if (robot != null) {
-			robot.setBusy(true, time, queueList.get(0).poll(), 1);
-			int deliveryTime = timeBetweenPositions(0, robot.getPosition());
-			deliveryTime += uniform(t4, t5);
-			deliveryTime += t1;
-			deliveryTime += uniform(t4, t5);
-			eventList.plan(new Event(1, time + deliveryTime));
-		}
-	}
-
-	public static void handleDeliveryToPosition(int position) {
-		Robot robot = robotList.getRobotWithTarget(position);
-		if (robot != null) {
-			Detail detail = robot.getDetail();
-			robot.setPosition(position);
-			robot.setBusy(false, time, null, -1);
-			switch (position) {
-			case 1:
-				if (machineList.get(0).isBusy()) {
-					queueList.get(1).add(detail);
-					if (maxQueueSizes.get(1) < queueList.get(1).size()) {
-						maxQueueSizes.set(1, queueList.get(1).size());
-					}
-				} else {
-					machineList.get(0).setBusy(true, time, detail);
-					int treatmentTime = normal(t6, t7);
-					eventList.plan(new Event(2, time + treatmentTime));
-				}
-				break;
-			case 2:
-				if (machineList.get(1).isBusy()) {
-					queueList.get(3).add(detail);
-					if (maxQueueSizes.get(3) < queueList.get(3).size()) {
-						maxQueueSizes.set(3, queueList.get(3).size());
-					}
-				} else {
-					machineList.get(1).setBusy(true, time, detail);
-					int treatmentTime = exponential(t8);
-					eventList.plan(new Event(4, time + treatmentTime));
-				}
-				break;
-			case 3:
-				detail.endTreatment(time);
-				readyDetails.add(detail);
-				break;
+		for (int i = 0; i < queueList.size(); i++) {
+			if (queueList.get(i).size() > maxQueueSizes.get(i)) {
+				maxQueueSizes.set(i, queueList.get(i).size());
 			}
+		}
 
-			Queue<Detail> nearestQueue = robotList.getNearestQueue(robot.getPosition(), queueList);
-			if (nearestQueue != null) {
-				int queuePosition = queueList.indexOf(nearestQueue) / 2;
-				robot.setBusy(true, time, nearestQueue.poll(), queuePosition + 1);
-				int deliveryTime = timeBetweenPositions(queuePosition, robot.getPosition());
-				deliveryTime += uniform(t4, t5);
-				deliveryTime += t1;
-				deliveryTime += uniform(t4, t5);
-				eventList.plan(new Event(queuePosition * 2 + 1, time + deliveryTime));
+		for (int i = 0; i < firstMachinesCount; i++) {
+			Machine machine = firstMachines.get(i);
+			if (!machine.isBusy() && queueList.get(i).size() > 0) {
+				machine.setBusy(true, queueList.get(i).poll());
+				eventList.plan(new Event(1, uniform(time + T[i % 2], dt[i % 2]), i));
 			}
 		}
 	}
 
-	public static void handleTreatmentOnMachine(int machineNumber) {
-		Machine machine = machineList.get(machineNumber - 1);
-		Detail detail = machine.getDetail();
-		machine.setBusy(false, time, null);
-		Robot robot = robotList.getNearestRobot(machineNumber);
+	public static void handleTreatmentOnStage(int stage, int machineNumber) {
+		Machine machine;
+		Detail detail;
+		if (stage == 1) {
+			machine = firstMachines.get(machineNumber);
+			detail = machine.getDetail();
+			machine.setBusy(false, null);
 
-		switch (machineNumber) {
-		case 1:
-			queueList.get(2).add(detail);
-			if (maxQueueSizes.get(2) < queueList.get(2).size()) {
-				maxQueueSizes.set(2, queueList.get(2).size());
-			}
-			if (robot != null) {
-				robot.setBusy(true, time, queueList.get(2).poll(), 2);
-				int deliveryTime = timeBetweenPositions(1, robot.getPosition());
-				deliveryTime += uniform(t4, t5);
-				deliveryTime += t1;
-				deliveryTime += uniform(t4, t5);
-				eventList.plan(new Event(3, time + deliveryTime));
+			int pos = random.nextInt(100) + 1;
+			if (pos > K[machineNumber % 2]) {
+				buffer.add(detail);
+				if (buffer.size() > maxBufferSize) {
+					maxBufferSize = buffer.size();
+				}
+				if (buffer.size() > 3) {
+					eventList.plan(new Event(2, time));
+					for (int i = 0; i < secondMachines.size(); i++) {
+						Machine secondMachine = secondMachines.get(i);
+						if (!secondMachine.isBusy()) {
+							secondMachine.setBusy(true, buffer.poll());
+							eventList.plan(new Event(3, exponential(time + T3), i));
+							break;
+						}
+					}
+				} else {
+					Machine secondMachine = secondMachines.get(0);
+					if (!secondMachine.isBusy()) {
+						secondMachine.setBusy(true, buffer.poll());
+						eventList.plan(new Event(3, exponential(time + T3), 0));
+					}
+				}
+
+			} else {
+				if (detail.getTreatmentCount() > 1) {
+					detail = null;
+				} else {
+					detail.incrementTreatmentCount();
+					queueList.get(machineNumber).add(detail);
+				}
 			}
 
-			if (queueList.get(1).size() > 0) {
-				machine.setBusy(true, time, queueList.get(1).poll());
-				int treatmentTime = normal(t6, t7);
-				eventList.plan(new Event(2, time + treatmentTime));
+			Queue<Detail> queue = queueList.get(machineNumber);
+			if (queue.size() > 0) {
+				machine.setBusy(true, queue.poll());
 			}
-			break;
-		case 2:
-			queueList.get(4).add(detail);
-			if (maxQueueSizes.get(4) < queueList.get(4).size()) {
-				maxQueueSizes.set(4, queueList.get(4).size());
-			}
-			if (robot != null) {
-				robot.setBusy(true, time, queueList.get(4).poll(), 3);
-				int deliveryTime = timeBetweenPositions(2, robot.getPosition());
-				deliveryTime += uniform(t4, t5);
-				deliveryTime += t1;
-				deliveryTime += uniform(t4, t5);
-				eventList.plan(new Event(5, time + deliveryTime));
-			}
+		} else if (stage == 2) {
+			machine = secondMachines.get(machineNumber);
+			detail = machine.getDetail();
+			machine.setBusy(false, null);
 
-			if (queueList.get(3).size() > 0) {
-				machine.setBusy(true, time, queueList.get(3).poll());
-				int treatmentTime = exponential(t8);
-				eventList.plan(new Event(4, time + treatmentTime));
+			readyDetails.add(detail);
+
+			if (machineNumber == 0) {
+				if (buffer.size() > 0) {
+					machine.setBusy(true, buffer.poll());
+					eventList.plan(new Event(3, exponential(time + T3), machineNumber));
+				}
+			} else {
+				if (buffer.size() > 3) {
+					machine.setBusy(true, buffer.poll());
+					eventList.plan(new Event(3, exponential(time + T3), machineNumber));
+				}
 			}
-			break;
 		}
+	}
+
+	public static void handleBufferOverflow() {
+		secondMachines.add(new Machine());
 	}
 
 	public static int uniform(int average, int deviation) {
@@ -222,51 +199,6 @@ public class Simulation {
 	}
 
 	public static int exponential(int average) {
-		return (int) (average - 1.0 * Math.log(random.nextDouble())); // B=1.0
-																		// ???
-	}
-
-	public static int normal(int average, int deviation) {
-		double x, y, s;
-		while (true) {
-			x = random.nextDouble() * 2 - 1;
-			y = random.nextDouble() * 2 - 1;
-			s = Math.pow(x, 2) + Math.pow(y, 2);
-			if (s > 0 && s <= 1) {
-				break;
-			}
-		}
-
-		double z1 = x * Math.pow((-2 * Math.log(s) / s), 0.5), z2 = y * Math.pow((-2 * Math.log(s) / s), 0.5);
-		return (int) (average + deviation * (time % 2 > 0 ? z1 : z2)); // select
-																		// z1/z2
-																		// ???
-	}
-
-	public static int timeBetweenPositions(int position1, int position2) {
-		int result = 0;
-
-		if ((position1 == 0 && position2 == 1 || position1 == 1 && position2 == 0)) {
-			result = t1;
-		} else if (position1 == 0 && position2 == 2 || position1 == 2 && position2 == 0) {
-			result = t1 + t2;
-		} else if (position1 == 0 && position2 == 3 || position1 == 3 && position2 == 0) {
-			result = t1 + t2 + t3;
-		} else if (position1 == 1 && position2 == 2 || position1 == 2 && position2 == 1) {
-			result = t2;
-		} else if (position1 == 1 && position2 == 3 || position1 == 3 && position2 == 1) {
-			result = t2 + t3;
-		} else if (position1 == 2 && position2 == 3 || position1 == 3 && position2 == 2) {
-			result = t3;
-		}
-
-		return result;
-	}
-
-	private static void showHistogram(List<Detail> details) {
-		Histogram histogram = new Histogram(details);
-		histogram.pack();
-		RefineryUtilities.centerFrameOnScreen(histogram);
-		histogram.setVisible(true);
+		return (int) (average - 1.0 * Math.log(random.nextDouble()));
 	}
 }
