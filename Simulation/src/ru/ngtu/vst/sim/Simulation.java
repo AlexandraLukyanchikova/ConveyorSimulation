@@ -1,6 +1,7 @@
 package ru.ngtu.vst.sim;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedList;
 import java.util.List;
@@ -25,8 +26,8 @@ public class Simulation {
 	private static double S5 = 4;
 
 	public static int time = 0;
-	public static final int simulationTime = 7 * 8 * 60;
-	public static final int firstMachinesCount = 15, secondMachinesCount = 2;
+	public static final int simulationTime = 8 * 60;
+	public static final int firstMachinesCount = 7, secondMachinesCount = 2;
 	public static final List<Queue<Detail>> queueList = new ArrayList<Queue<Detail>>();
 	public static final List<Integer> maxQueueSizes = new ArrayList<Integer>();
 	public static final Queue<Detail> buffer = new LinkedList<Detail>();
@@ -37,6 +38,7 @@ public class Simulation {
 	public static final EventList eventList = new EventList();
 	public static final List<Detail> readyDetails = new ArrayList<Detail>();
 	public static int detailCount = 0;
+	private static int r = 2;
 
 	public static void main(String[] args) {
 		for (int i = 0; i < firstMachinesCount; i++) {
@@ -94,13 +96,25 @@ public class Simulation {
 			System.out.println("Max size of queue #" + i + ": " + maxQueueSizes.get(i));
 		}
 		System.out.println("Max buffer size: " + maxBufferSize);
+		System.out.println();
+		
+		profitsCalculation();
 	}
 
+	public static void profitsCalculation()
+	{
+		double expenses = S1*firstMachinesCount*(simulationTime/60)+S2*firstMachinesCount*(simulationTime/60)+detailCount*S4+detailCount*r *S5;
+		double profit = readyDetails.size()*S3 - expenses;
+		
+		System.out.println("Expenses: " + expenses);
+		System.out.println("Profit: " + profit);
+	}
+	
 	public static void handleDetailGetting() {
 		eventList.plan(new Event(0, uniform(time + A, B)));
 		for (int i = 0; i < 3; i++) {
 			List<Queue<Detail>> sortedList = new ArrayList<Queue<Detail>>(queueList);
-			sortedList.sort(new Comparator<Queue<Detail>>() {
+			Collections.sort(sortedList, new Comparator<Queue<Detail>>() {
 				public int compare(Queue<Detail> q1, Queue<Detail> q2) {
 					return Integer.compare(q1.size(), q2.size());
 				}
