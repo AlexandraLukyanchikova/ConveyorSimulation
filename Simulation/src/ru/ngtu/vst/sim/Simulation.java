@@ -26,24 +26,21 @@ public class Simulation {
 	private static double S5 = 4;
 
 	public static int time = 0;
-	public static final int simulationTime = 8 * 60;
-	public static final int firstMachinesCount = 7, secondMachinesCount = 2;
+	public static final int simulationTime = 8 * 60 * 5;
+	public static final int firstMachinesCount = 2, secondMachinesCount = 2;
 	public static final List<Queue<Detail>> queueList = new ArrayList<Queue<Detail>>();
-	public static final List<Integer> maxQueueSizes = new ArrayList<Integer>();
 	public static final Queue<Detail> buffer = new LinkedList<Detail>();
-	public static int maxBufferSize = 0;
-	public static final Random random = new Random();
+	public static final Random random = new Random(100000);
 	public static final List<Machine> firstMachines = new ArrayList<Machine>();
 	public static final List<Machine> secondMachines = new ArrayList<Machine>();
 	public static final EventList eventList = new EventList();
 	public static final List<Detail> readyDetails = new ArrayList<Detail>();
 	public static int detailCount = 0;
-	private static int r = 2;
+	private static double r = 0.0;
 
 	public static void main(String[] args) {
 		for (int i = 0; i < firstMachinesCount; i++) {
 			queueList.add(new LinkedList<Detail>());
-			maxQueueSizes.add(0);
 		}
 		for (int i = 0; i < firstMachinesCount; i++) {
 			firstMachines.add(new Machine());
@@ -52,7 +49,7 @@ public class Simulation {
 			secondMachines.add(new Machine());
 		}
 		eventList.plan(new Event(0, uniform(A, B)));
-		eventList.plan(new Event(4, simulationTime));
+		eventList.plan(new Event(3, simulationTime));
 
 		boolean finish = false;
 		while (true) {
@@ -60,9 +57,8 @@ public class Simulation {
 			time = currentEvent.getTime();
 			// 0 - getting of a detail
 			// 1 - completion of the treatment in the 1st stage
-			// 2 - buffer overflow
-			// 3 - completion of the treatment in the 2st stage
-			// 4 - completion of the simulation
+			// 2 - completion of the treatment in the 2st stage
+			// 3 - completion of the simulation
 			switch (currentEvent.getCode()) {
 			case 0:
 				handleDetailGetting();
@@ -71,12 +67,9 @@ public class Simulation {
 				handleTreatmentOnStage(1, currentEvent.getMachineNumber());
 				break;
 			case 2:
-				handleBufferOverflow();
-				break;
-			case 3:
 				handleTreatmentOnStage(2, currentEvent.getMachineNumber());
 				break;
-			case 4:
+			case 3:
 				finish = true;
 				break;
 			}
@@ -92,26 +85,28 @@ public class Simulation {
 		System.out.println("Machines of 1st type: " + firstMachines.size());
 		System.out.println("Machines of 2nd type: " + secondMachines.size());
 		System.out.println();
-		for (int i = 0; i < maxQueueSizes.size(); i++) {
-			System.out.println("Max size of queue #" + i + ": " + maxQueueSizes.get(i));
+		for (int i = 0; i < firstMachines.size(); i++) {
+			System.out.println("Work coef of machine #" + i + ": "
+					+ (double) firstMachines.get(i).getWorkTime() / (double) simulationTime);
 		}
-		System.out.println("Max buffer size: " + maxBufferSize);
+		System.out.println(
+				"Work coef of 2nd machine: " + (double) secondMachines.get(0).getWorkTime() / (double) simulationTime);
 		System.out.println();
-		
+
 		profitsCalculation();
 	}
 
-	public static void profitsCalculation()
-	{
-		double expenses = S1*firstMachinesCount*(simulationTime/60)+S2*firstMachinesCount*(simulationTime/60)+detailCount*S4+detailCount*r *S5;
-		double profit = readyDetails.size()*S3 - expenses;
-		
+	public static void profitsCalculation() {
+		double expenses = S1 * firstMachinesCount * (simulationTime / 60)
+				+ S2 * firstMachinesCount * (simulationTime / 60) + detailCount * S4 + detailCount * r * S5;
+		double profit = readyDetails.size() * S3 - expenses;
+
 		System.out.println("Expenses: " + expenses);
 		System.out.println("Profit: " + profit);
 	}
-	
+
 	public static void handleDetailGetting() {
-		eventList.plan(new Event(0, uniform(time + A, B)));
+		eventList.plan(new Event(0, time + uniform(A, B)));
 		for (int i = 0; i < 3; i++) {
 			List<Queue<Detail>> sortedList = new ArrayList<Queue<Detail>>(queueList);
 			Collections.sort(sortedList, new Comparator<Queue<Detail>>() {
@@ -123,17 +118,11 @@ public class Simulation {
 			detailCount++;
 		}
 
-		for (int i = 0; i < queueList.size(); i++) {
-			if (queueList.get(i).size() > maxQueueSizes.get(i)) {
-				maxQueueSizes.set(i, queueList.get(i).size());
-			}
-		}
-
 		for (int i = 0; i < firstMachinesCount; i++) {
 			Machine machine = firstMachines.get(i);
 			if (!machine.isBusy() && queueList.get(i).size() > 0) {
-				machine.setBusy(true, queueList.get(i).poll());
-				eventList.plan(new Event(1, uniform(time + T[i % 2], dt[i % 2]), i));
+				machine.setBusy(true, queueList.get(i).poll(), time);
+				eventList.plan(new Event(1, time + uniform(T[i % 2], dt[i % 2]), i));
 			}
 		}
 	}
@@ -144,29 +133,25 @@ public class Simulation {
 		if (stage == 1) {
 			machine = firstMachines.get(machineNumber);
 			detail = machine.getDetail();
-			machine.setBusy(false, null);
+			machine.setBusy(false, null, time);
 
 			int pos = random.nextInt(100) + 1;
-			if (pos > K[machineNumber % 2]) {
+			if (pos > K[machineNumber % 2] - r) {
 				buffer.add(detail);
-				if (buffer.size() > maxBufferSize) {
-					maxBufferSize = buffer.size();
-				}
 				if (buffer.size() > 3) {
-					eventList.plan(new Event(2, time));
-					for (int i = 0; i < secondMachines.size(); i++) {
+					for (int i = 1; i < secondMachines.size(); i++) {
 						Machine secondMachine = secondMachines.get(i);
 						if (!secondMachine.isBusy()) {
-							secondMachine.setBusy(true, buffer.poll());
-							eventList.plan(new Event(3, exponential(time + T3), i));
+							secondMachine.setBusy(true, buffer.poll(), time);
+							eventList.plan(new Event(2, time + exponential(T3), i));
 							break;
 						}
 					}
 				} else {
 					Machine secondMachine = secondMachines.get(0);
 					if (!secondMachine.isBusy()) {
-						secondMachine.setBusy(true, buffer.poll());
-						eventList.plan(new Event(3, exponential(time + T3), 0));
+						secondMachine.setBusy(true, buffer.poll(), time);
+						eventList.plan(new Event(2, time + exponential(T3), 0));
 					}
 				}
 
@@ -181,38 +166,43 @@ public class Simulation {
 
 			Queue<Detail> queue = queueList.get(machineNumber);
 			if (queue.size() > 0) {
-				machine.setBusy(true, queue.poll());
+				machine.setBusy(true, queue.poll(), time);
+				eventList
+						.plan(new Event(1, time + uniform(T[machineNumber % 2], dt[machineNumber % 2]), machineNumber));
 			}
 		} else if (stage == 2) {
 			machine = secondMachines.get(machineNumber);
 			detail = machine.getDetail();
-			machine.setBusy(false, null);
+			machine.setBusy(false, null, time);
 
 			readyDetails.add(detail);
 
 			if (machineNumber == 0) {
 				if (buffer.size() > 0) {
-					machine.setBusy(true, buffer.poll());
-					eventList.plan(new Event(3, exponential(time + T3), machineNumber));
+					machine.setBusy(true, buffer.poll(), time);
+					eventList.plan(new Event(2, time + exponential(T3), machineNumber));
 				}
 			} else {
 				if (buffer.size() > 3) {
-					machine.setBusy(true, buffer.poll());
-					eventList.plan(new Event(3, exponential(time + T3), machineNumber));
+					machine.setBusy(true, buffer.poll(), time);
+					eventList.plan(new Event(2, time + exponential(T3), machineNumber));
 				}
 			}
 		}
 	}
 
-	public static void handleBufferOverflow() {
-		secondMachines.add(new Machine());
-	}
-
 	public static int uniform(int average, int deviation) {
-		return average + random.nextInt(deviation * 2) - deviation;
+		int res = (int) (average + random.nextDouble() * 2 * deviation - deviation);
+		return res;
 	}
 
 	public static int exponential(int average) {
-		return (int) (average - 1.0 * Math.log(random.nextDouble()));
+		int sign = random.nextInt(2);
+		if (sign == 0) {
+			return (int) (average - Math.log(random.nextDouble()));
+		} else {
+			return (int) (average + Math.log(random.nextDouble()));
+		}
+
 	}
 }
